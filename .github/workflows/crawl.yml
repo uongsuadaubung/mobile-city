@@ -1,0 +1,83 @@
+name: Daily Product Crawl
+
+on:
+  workflow_dispatch: # Cho phép chạy thủ công
+  schedule:
+    - cron: '0 0 * * *' # Chạy tự động vào 0h sáng mỗi ngày (giờ UTC)
+
+permissions:
+  contents: write
+  deployments: write
+  actions: write
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Run Crawler
+        run: bun run crawl
+
+      - name: Build Svelte App
+        run: bun run build
+
+      - name: Commit and Push changes
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/products.json
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Auto-update products.json and build [skip ci]"
+            git push
+          fi
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          publish_branch: gh-pages
+
+      - name: Cleanup old GitHub Deployments
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Bắt đầu dọn dẹp các lịch sử deploy rác..."
+          OLD_IDS=$(gh api --paginate "/repos/${{ github.repository }}/deployments" --jq ".[1:][].id")
+          if [ -z "$OLD_IDS" ]; then
+            echo "Không có rác cũ nào cần dọn!"
+          else
+            for id in $OLD_IDS; do
+              echo "Đang xóa deployment cũ (ID: $id) khỏi server..."
+              gh api -X DELETE "/repos/${{ github.repository }}/deployments/$id" || true
+            done
+            echo "✅ Dọn dẹp hoàn tất, chỉ giữ lại bản Deploy mới nhất!"
+          fi
+
+      - name: Cleanup old GitHub Actions Workflow Runs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Bắt đầu dọn dẹp các lịch sử Github Actions đã chạy xong..."
+          COMPLETED_RUNS=$(gh api --paginate "/repos/${{ github.repository }}/actions/runs?status=completed" --jq ".workflow_runs[].id")
+          if [ -z "$COMPLETED_RUNS" ]; then
+            echo "Không có lịch sử Actions rác nào!"
+          else
+            for id in $COMPLETED_RUNS; do
+              echo "Đang xóa lịch sử Workflow Run cũ (ID: $id)..."
+              gh api -X DELETE "/repos/${{ github.repository }}/actions/runs/$id" || true
+            done
+            echo "✅ Dọn dẹp Actions thành công, rỗng tuếch!"
+          fi

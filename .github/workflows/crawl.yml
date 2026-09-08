@@ -2,8 +2,7 @@ name: Daily Product Crawl
 
 on:
   workflow_dispatch: # Cho phép chạy thủ công
-  schedule:
-    - cron: '0 0 * * *' # Chạy tự động vào 0h sáng mỗi ngày (giờ UTC)
+  
 
 permissions:
   contents: write
